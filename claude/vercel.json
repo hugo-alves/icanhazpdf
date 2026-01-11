@@ -1,22 +1,12 @@
 {
   "version": 2,
   "builds": [
-    {
-      "src": "server.mjs",
-      "use": "@vercel/node"
-    }
+    { "src": "server.mjs", "use": "@vercel/node" },
+    { "src": "public/**", "use": "@vercel/static" }
   ],
   "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/server.mjs"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/server.mjs"
-    }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+    { "src": "/api/(.*)", "dest": "/server.mjs" },
+    { "src": "/", "dest": "/public/index.html" },
+    { "src": "/(.*)", "dest": "/public/$1" }
+  ]
 }

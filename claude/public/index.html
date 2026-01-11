@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Paper Fetcher</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+    .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
+  </style>
+</head>
+<body class="min-h-screen gradient-bg">
+  <div class="container mx-auto px-4 py-12">
+    <!-- Header -->
+    <div class="text-center mb-12">
+      <h1 class="text-4xl md:text-5xl font-bold text-white mb-4">📄 Paper Fetcher</h1>
+      <p class="text-white/80 text-lg">Find and download academic papers from multiple sources</p>
+    </div>
+
+    <!-- Search Card -->
+    <div class="max-w-2xl mx-auto">
+      <div class="glass rounded-2xl shadow-2xl p-8">
+        <form id="searchForm" class="space-y-4">
+          <div>
+            <label for="title" class="block text-sm font-medium text-gray-700 mb-2">Paper Title</label>
+            <input 
+              type="text" 
+              id="title" 
+              name="title"
+              placeholder="e.g., Attention Is All You Need"
+              class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition"
+              required
+            >
+          </div>
+          <button 
+            type="submit" 
+            id="searchBtn"
+            class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 px-6 rounded-xl font-semibold hover:from-purple-700 hover:to-indigo-700 transition transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span id="btnText">🔍 Search</span>
+          </button>
+        </form>
+
+        <!-- Results -->
+        <div id="results" class="mt-8 hidden">
+          <div class="border-t border-gray-100 pt-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Result</h3>
+            <div id="resultContent"></div>
+          </div>
+        </div>
+
+        <!-- Error -->
+        <div id="error" class="mt-6 hidden">
+          <div class="bg-red-50 border border-red-200 rounded-xl p-4">
+            <p class="text-red-700" id="errorText"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sources Info -->
+      <div class="mt-8 glass rounded-2xl p-6">
+        <h3 class="text-sm font-semibold text-gray-700 mb-3">📚 Sources</h3>
+        <div class="flex flex-wrap gap-2">
+          <span class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">arXiv</span>
+          <span class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">Semantic Scholar</span>
+          <span class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">OpenAlex</span>
+          <span class="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">PubMed</span>
+          <span class="px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">CORE</span>
+          <span class="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">Crossref</span>
+          <span class="px-3 py-1 bg-pink-100 text-pink-700 rounded-full text-xs font-medium">Web Search</span>
+          <span class="px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">Unpaywall</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('searchForm');
+    const results = document.getElementById('results');
+    const resultContent = document.getElementById('resultContent');
+    const error = document.getElementById('error');
+    const errorText = document.getElementById('errorText');
+    const searchBtn = document.getElementById('searchBtn');
+    const btnText = document.getElementById('btnText');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const title = document.getElementById('title').value.trim();
+      if (!title) return;
+
+      // Reset UI
+      results.classList.add('hidden');
+      error.classList.add('hidden');
+      searchBtn.disabled = true;
+      btnText.innerHTML = '<span class="animate-pulse">⏳ Searching...</span>';
+
+      try {
+        const response = await fetch('/api/fetch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          results.classList.remove('hidden');
+          resultContent.innerHTML = `
+            <div class="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
+              <div class="flex items-center gap-2">
+                <span class="text-green-600 text-xl">✅</span>
+                <span class="font-semibold text-green-800">Found!</span>
+                <span class="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs">${data.source}</span>
+              </div>
+              ${data.metadata?.title ? `<p class="text-gray-700 font-medium">${data.metadata.title}</p>` : ''}
+              ${data.metadata?.authors ? `<p class="text-gray-500 text-sm">${data.metadata.authors}</p>` : ''}
+              <a 
+                href="${data.pdf_url}" 
+                target="_blank"
+                class="inline-flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
+              >
+                📥 Download PDF
+              </a>
+            </div>
+          `;
+        } else {
+          error.classList.remove('hidden');
+          errorText.textContent = data.error || 'Paper not found in any source';
+        }
+      } catch (err) {
+        error.classList.remove('hidden');
+        errorText.textContent = 'Error connecting to API: ' + err.message;
+      } finally {
+        searchBtn.disabled = false;
+        btnText.innerHTML = '🔍 Search';
+      }
+    });
+  </script>
+</body>
+</html>
