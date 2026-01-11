@@ -1,10 +1,12 @@
+import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(case_sensitive=False)
     app_name: str = "paper-fetcher"
-    cache_db_path: str = "./cache.sqlite"
+    # Use /tmp for serverless (Vercel), local path otherwise
+    cache_db_path: str = os.environ.get("CACHE_DB_PATH", "/tmp/cache.sqlite" if os.environ.get("VERCEL") else "./cache.sqlite")
     cache_ttl_seconds: int = 60 * 60 * 24 * 7
     request_timeout_seconds: int = 20
 
