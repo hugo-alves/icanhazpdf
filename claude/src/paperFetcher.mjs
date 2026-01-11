@@ -8,6 +8,7 @@ import { fetchFromCrossref } from './fetchers/crossref.mjs';
 import { fetchFromCore } from './fetchers/core.mjs';
 import { fetchFromOpenAlex } from './fetchers/openalex.mjs';
 import { fetchFromPubMed } from './fetchers/pubmed.mjs';
+import { fetchFromWebSearch } from './fetchers/webSearch.mjs';
 
 const CACHE_FILE = process.env.CACHE_FILE || './cache.json';
 const PDF_STORAGE_PATH = process.env.PDF_STORAGE_PATH || './pdfs';
@@ -106,6 +107,8 @@ export async function fetchPaper(title, options = {}) {
     { name: 'OpenAlex', fn: () => fetchFromOpenAlex(title) },
     { name: 'PubMed Central', fn: () => fetchFromPubMed(title) },
     { name: 'CORE', fn: () => fetchFromCore(title) },
+    { name: 'Crossref', fn: () => fetchFromCrossref(title) },
+    { name: 'Web Search', fn: () => fetchFromWebSearch(title) },
   ];
 
   let lastError = null;
