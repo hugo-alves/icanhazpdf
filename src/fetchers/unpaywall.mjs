@@ -1,8 +1,10 @@
 import axios from 'axios';
+import { withRetry } from './baseFetcher.mjs';
 
 /**
  * Unpaywall fetcher - finds legal open access versions of papers via DOI
  * Requires a DOI to work, so this depends on finding the DOI first
+ * Now with retry logic for transient failures
  */
 export async function fetchFromUnpaywall(doi, email = process.env.UNPAYWALL_EMAIL || 'example@example.com') {
   try {
@@ -13,7 +15,9 @@ export async function fetchFromUnpaywall(doi, email = process.env.UNPAYWALL_EMAI
     const url = `https://api.unpaywall.org/v2/${doi}`;
     const params = { email };
 
-    const response = await axios.get(url, { params, timeout: 10000 });
+    const response = await withRetry(() =>
+      axios.get(url, { params, timeout: 10000 })
+    );
     const data = response.data;
 
     if (data.best_oa_location?.url_for_pdf) {

@@ -1,8 +1,10 @@
 import axios from 'axios';
+import { withRetry } from './baseFetcher.mjs';
 
 /**
  * CORE fetcher - UK-based open access repository aggregator
  * CORE aggregates millions of open access papers from repositories worldwide
+ * Now with retry logic for transient failures
  */
 export async function fetchFromCore(title) {
   try {
@@ -12,7 +14,9 @@ export async function fetchFromCore(title) {
       limit: 5
     };
 
-    const response = await axios.get(searchUrl, { params, timeout: 10000 });
+    const response = await withRetry(() =>
+      axios.get(searchUrl, { params, timeout: 10000 })
+    );
 
     if (!response.data.results || response.data.results.length === 0) {
       return { success: false, error: 'No results found on CORE' };

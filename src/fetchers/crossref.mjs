@@ -1,9 +1,11 @@
 import axios from 'axios';
 import { isTitleMatch } from '../utils/titleMatch.mjs';
+import { withRetry } from './baseFetcher.mjs';
 
 /**
  * Crossref fetcher - searches for papers by title and returns PDF links
  * Uses query.title for more precise matching
+ * Now with retry logic for transient failures
  */
 export async function fetchFromCrossref(title) {
   try {
@@ -14,7 +16,9 @@ export async function fetchFromCrossref(title) {
       select: 'DOI,title,author,published,publisher,link'
     };
 
-    const response = await axios.get(searchUrl, { params, timeout: 15000 });
+    const response = await withRetry(() =>
+      axios.get(searchUrl, { params, timeout: 15000 })
+    );
 
     if (!response.data.message?.items || response.data.message.items.length === 0) {
       return { success: false, error: 'No results found on Crossref' };

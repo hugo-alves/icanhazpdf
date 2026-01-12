@@ -2,22 +2,26 @@ import { parseStringPromise } from 'xml2js';
 import axios from 'axios';
 import { isTitleMatch } from '../utils/titleMatch.mjs';
 import { validatePdfUrl } from '../utils/pdfValidator.mjs';
+import { withRetry } from './baseFetcher.mjs';
 
 /**
  * ArXiv fetcher - searches for papers on arXiv and returns PDF URLs
  * ArXiv is a free preprint repository with direct PDF access
  * Validates title similarity and PDF content-type
+ * Now with retry logic for transient failures
  */
 export async function fetchFromArxiv(title) {
   try {
-    // Search arXiv API
+    // Search arXiv API with retry
     const searchUrl = 'http://export.arxiv.org/api/query';
     const params = {
       search_query: `ti:"${title}"`,
       max_results: 5
     };
 
-    const response = await axios.get(searchUrl, { params, timeout: 10000 });
+    const response = await withRetry(() =>
+      axios.get(searchUrl, { params, timeout: 10000 })
+    );
     const data = await parseStringPromise(response.data);
 
     if (!data.feed.entry || data.feed.entry.length === 0) {

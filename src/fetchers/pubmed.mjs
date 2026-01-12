@@ -1,13 +1,15 @@
 import axios from 'axios';
 import { parseStringPromise } from 'xml2js';
+import { withRetry } from './baseFetcher.mjs';
 
 /**
  * PubMed/PMC fetcher - for biomedical and life sciences papers
  * PubMed Central (PMC) provides free full-text articles
+ * Now with retry logic for transient failures
  */
 export async function fetchFromPubMed(title) {
   try {
-    // Step 1: Search PubMed for the paper
+    // Step 1: Search PubMed for the paper (with retry)
     const searchUrl = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
     const searchParams = {
       db: 'pubmed',
@@ -16,14 +18,16 @@ export async function fetchFromPubMed(title) {
       retmode: 'json'
     };
 
-    const searchResponse = await axios.get(searchUrl, { params: searchParams, timeout: 10000 });
+    const searchResponse = await withRetry(() =>
+      axios.get(searchUrl, { params: searchParams, timeout: 10000 })
+    );
     const ids = searchResponse.data.esearchresult?.idlist;
 
     if (!ids || ids.length === 0) {
       return { success: false, error: 'No results found on PubMed' };
     }
 
-    // Step 2: Get PMC ID from PubMed ID
+    // Step 2: Get PMC ID from PubMed ID (with retry)
     const linkUrl = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/elink.fcgi';
     const linkParams = {
       dbfrom: 'pubmed',
@@ -32,7 +36,9 @@ export async function fetchFromPubMed(title) {
       retmode: 'json'
     };
 
-    const linkResponse = await axios.get(linkUrl, { params: linkParams, timeout: 10000 });
+    const linkResponse = await withRetry(() =>
+      axios.get(linkUrl, { params: linkParams, timeout: 10000 })
+    );
     const pmcId = linkResponse.data.linksets?.[0]?.linksetdbs?.find(
       ls => ls.dbto === 'pmc'
     )?.links?.[0];
@@ -41,7 +47,7 @@ export async function fetchFromPubMed(title) {
       return { success: false, error: 'Paper not available in PubMed Central' };
     }
 
-    // Step 3: Get article details
+    // Step 3: Get article details (with retry)
     const summaryUrl = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi';
     const summaryParams = {
       db: 'pmc',
@@ -49,7 +55,9 @@ export async function fetchFromPubMed(title) {
       retmode: 'json'
     };
 
-    const summaryResponse = await axios.get(summaryUrl, { params: summaryParams, timeout: 10000 });
+    const summaryResponse = await withRetry(() =>
+      axios.get(summaryUrl, { params: summaryParams, timeout: 10000 })
+    );
     const article = summaryResponse.data.result?.[pmcId];
 
     // PMC PDF URL format

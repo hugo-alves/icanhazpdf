@@ -1,9 +1,11 @@
 import axios from 'axios';
 import { isTitleMatch } from '../utils/titleMatch.mjs';
+import { withRetry } from './baseFetcher.mjs';
 
 /**
  * Semantic Scholar fetcher - uses S2 API to find papers and their open access PDFs
- * Now validates title similarity to avoid false positives
+ * Validates title similarity to avoid false positives
+ * Now with retry logic for transient failures
  */
 export async function fetchFromSemanticScholar(title) {
   try {
@@ -19,7 +21,9 @@ export async function fetchFromSemanticScholar(title) {
       headers['x-api-key'] = process.env.SEMANTIC_SCHOLAR_API_KEY;
     }
 
-    const response = await axios.get(searchUrl, { params, headers, timeout: 10000 });
+    const response = await withRetry(() =>
+      axios.get(searchUrl, { params, headers, timeout: 10000 })
+    );
 
     if (!response.data.data || response.data.data.length === 0) {
       return { success: false, error: 'No results found on Semantic Scholar' };

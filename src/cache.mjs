@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import logger from './logger.mjs';
 
 /**
  * Cache abstraction layer
@@ -24,13 +25,13 @@ async function initCache() {
       const { kv } = await import('@vercel/kv');
       kvClient = kv;
       useKV = true;
-      console.log('Using Vercel KV cache');
+      logger.info('Using Vercel KV cache');
     } catch (error) {
-      console.warn('Vercel KV not available, falling back to JSON file:', error.message);
+      logger.warn({ error: error.message }, 'Vercel KV not available, falling back to JSON file');
       useKV = false;
     }
   } else {
-    console.log('Using local JSON file cache');
+    logger.info('Using local JSON file cache');
     useKV = false;
   }
 }
@@ -44,6 +45,7 @@ export function normalizeTitle(title) {
 
 /**
  * Get item from cache
+ * Returns the cached value with metadata, or null if not found
  */
 export async function cacheGet(key) {
   await initCache();
@@ -52,9 +54,11 @@ export async function cacheGet(key) {
   if (useKV && kvClient) {
     try {
       const result = await kvClient.get(`${CACHE_PREFIX}${normalizedKey}`);
-      return result || null;
+      if (!result) return null;
+      // Return value with cached flag for backwards compatibility
+      return { ...result, cached: true };
     } catch (error) {
-      console.error('KV get error:', error.message);
+      logger.error({ error: error.message }, 'KV get error');
       return null;
     }
   }
@@ -63,25 +67,34 @@ export async function cacheGet(key) {
   try {
     const data = await fs.readFile(CACHE_FILE, 'utf-8');
     const cache = JSON.parse(data);
-    return cache[normalizedKey] || null;
+    const entry = cache[normalizedKey];
+    if (!entry) return null;
+    // Return value with cached flag for backwards compatibility
+    return { ...entry, cached: true };
   } catch {
     return null;
   }
 }
 
 /**
- * Set item in cache
+ * Set item in cache with timestamp
  */
 export async function cacheSet(key, value) {
   await initCache();
   const normalizedKey = normalizeTitle(key);
 
+  // Add timestamp to the cached value
+  const valueWithTimestamp = {
+    ...value,
+    cachedAt: new Date().toISOString()
+  };
+
   if (useKV && kvClient) {
     try {
-      await kvClient.set(`${CACHE_PREFIX}${normalizedKey}`, value, { ex: CACHE_TTL });
+      await kvClient.set(`${CACHE_PREFIX}${normalizedKey}`, valueWithTimestamp, { ex: CACHE_TTL });
       return true;
     } catch (error) {
-      console.error('KV set error:', error.message);
+      logger.error({ error: error.message }, 'KV set error');
       return false;
     }
   }
@@ -95,11 +108,11 @@ export async function cacheSet(key, value) {
     } catch {
       // File doesn't exist, start fresh
     }
-    cache[normalizedKey] = value;
+    cache[normalizedKey] = valueWithTimestamp;
     await fs.writeFile(CACHE_FILE, JSON.stringify(cache, null, 2));
     return true;
   } catch (error) {
-    console.error('Failed to save cache:', error.message);
+    logger.error({ error: error.message }, 'Failed to save cache');
     return false;
   }
 }
@@ -116,7 +129,7 @@ export async function cacheDelete(key) {
       await kvClient.del(`${CACHE_PREFIX}${normalizedKey}`);
       return true;
     } catch (error) {
-      console.error('KV delete error:', error.message);
+      logger.error({ error: error.message }, 'KV delete error');
       return false;
     }
   }

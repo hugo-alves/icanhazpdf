@@ -158,6 +158,14 @@ app.post('/api/fetch', apiLimiter, async (req, res) => {
       });
     }
 
+    // Title length validation (prevent abuse and memory issues)
+    if (title.length > 1000) {
+      return res.status(400).json({
+        success: false,
+        error: 'Title too long. Maximum 1000 characters.'
+      });
+    }
+
     const reqLog = createRequestLogger(req);
     reqLog.info({ title, downloadLocal, skipCache }, 'Fetching paper');
 
@@ -310,6 +318,14 @@ app.get('/api/fetch-stream', apiLimiter, async (req, res) => {
     return res.status(400).json({
       success: false,
       error: 'Missing or invalid "title" query parameter'
+    });
+  }
+
+  // Title length validation
+  if (title.length > 1000) {
+    return res.status(400).json({
+      success: false,
+      error: 'Title too long. Maximum 1000 characters.'
     });
   }
 
