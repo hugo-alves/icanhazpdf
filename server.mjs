@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import net from 'net';
 import rateLimit from 'express-rate-limit';
 import { fetchPaper, getSourceHealth } from './src/paperFetcher.mjs';
 import { fetchFromUnpaywall } from './src/fetchers/unpaywall.mjs';
@@ -13,10 +14,9 @@ const DEFAULT_PORT = process.env.PORT || 3000;
 /**
  * Check if a port is available
  */
-async function isPortAvailable(port) {
-  const net = await import('net');
+function isPortAvailable(port) {
   return new Promise((resolve) => {
-    const server = net.default.createServer();
+    const server = net.createServer();
     server.once('error', () => resolve(false));
     server.once('listening', () => {
       server.close();
