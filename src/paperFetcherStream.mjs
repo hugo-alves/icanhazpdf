@@ -97,13 +97,18 @@ export async function fetchPaperWithProgress(title, emit, options = {}) {
     }
   }
 
-  // If we found PDFs, return the best one
+  // If we found PDFs, return the best one with alternatives
   if (successfulResults.length > 0) {
     successfulResults.sort((a, b) =>
       (SOURCE_PRIORITY[a.name] || 99) - (SOURCE_PRIORITY[b.name] || 99)
     );
 
     const best = successfulResults[0];
+    const alternatives = successfulResults.slice(1).map(r => ({
+      source: r.result.source || r.name,
+      pdf_url: r.result.pdf_url
+    }));
+
     emit('selected', { source: best.name, count: successfulResults.length });
 
     const finalResult = {
@@ -111,6 +116,7 @@ export async function fetchPaperWithProgress(title, emit, options = {}) {
       pdf_url: best.result.pdf_url,
       source: best.result.source || best.name,
       metadata: best.result.metadata,
+      alternatives: alternatives.length > 0 ? alternatives : undefined,
       fetchedAt: new Date().toISOString()
     };
 

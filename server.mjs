@@ -1,6 +1,11 @@
 import 'dotenv/config';
 import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import net from 'net';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import rateLimit from 'express-rate-limit';
 import { fetchPaper, getSourceHealth } from './src/paperFetcher.mjs';
 import { fetchFromUnpaywall } from './src/fetchers/unpaywall.mjs';
@@ -79,8 +84,11 @@ app.use((req, res, next) => {
   next();
 });
 
-// Health check endpoint
-app.get('/', (req, res) => {
+// Serve static files from public directory
+app.use(express.static(path.join(__dirname, 'public')));
+
+// API info endpoint (moved from /)
+app.get('/api/info', (req, res) => {
   res.json({
     service: 'Paper PDF Fetcher API',
     version: '1.0.0',

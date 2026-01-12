@@ -338,6 +338,33 @@
       `;
     }
 
+    // Show early result while other sources continue searching
+    function showEarlyResult(source, pdfUrl) {
+      results.classList.remove('hidden');
+      const color = SOURCE_COLORS[source] || 'bg-gray-100';
+      resultContent.innerHTML = `
+        <div class="brutal-border bg-solar-green/20 p-4 space-y-4">
+          <div class="flex items-center flex-wrap gap-2">
+            <span class="text-2xl">🌿</span>
+            <span class="font-bold text-black uppercase font-mono">Found!</span>
+            <span class="brutal-border px-2 py-0.5 ${color} text-black text-xs font-bold uppercase font-mono">${source}</span>
+            <span class="text-xs text-gray-500 animate-pulse">(checking other sources...)</span>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <a
+              href="${pdfUrl}"
+              target="_blank"
+              id="earlyPdfLink"
+              class="inline-flex items-center gap-2 brutal-border bg-solar-green text-black px-4 py-2 font-bold uppercase font-mono text-sm hover-lift shadow-brutal-sm"
+            >
+              <span>Download PDF</span>
+              <span>↓</span>
+            </a>
+          </div>
+        </div>
+      `;
+    }
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
 
@@ -373,9 +400,18 @@
           updateSourceStatus(data.source, 'trying');
         });
 
+        // Track first found result for immediate display
+        let firstFoundResult = null;
+
         eventSource.addEventListener('found', (e) => {
           const data = JSON.parse(e.data);
           updateSourceStatus(data.source, 'found');
+
+          // Show immediate result on first PDF found
+          if (!firstFoundResult) {
+            firstFoundResult = data;
+            showEarlyResult(data.source, data.pdf_url);
+          }
         });
 
         eventSource.addEventListener('no_pdf', (e) => {
@@ -408,6 +444,29 @@
           if (data.success) {
             results.classList.remove('hidden');
             const doi = data.metadata?.doi;
+            const alternatives = data.alternatives || [];
+
+            // Build alternatives HTML if there are any
+            const alternativesHtml = alternatives.length > 0 ? `
+              <details class="mt-3">
+                <summary class="cursor-pointer text-xs font-mono text-gray-500 hover:text-gray-700">
+                  + ${alternatives.length} alternative source${alternatives.length > 1 ? 's' : ''}
+                </summary>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  ${alternatives.map(alt => `
+                    <a
+                      href="${alt.pdf_url}"
+                      target="_blank"
+                      class="inline-flex items-center gap-1 brutal-border bg-white text-black px-3 py-1.5 font-mono text-xs hover-lift shadow-brutal-sm"
+                    >
+                      <span>${alt.source}</span>
+                      <span>↗</span>
+                    </a>
+                  `).join('')}
+                </div>
+              </details>
+            ` : '';
+
             resultContent.innerHTML = `
               <div class="brutal-border bg-solar-green/20 p-4 space-y-4">
                 <div class="flex items-center flex-wrap gap-2">
@@ -439,6 +498,7 @@
                     </button>
                   ` : ''}
                 </div>
+                ${alternativesHtml}
               </div>
             `;
 
