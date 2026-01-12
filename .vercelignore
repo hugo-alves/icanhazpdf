@@ -1,0 +1,5 @@
+.beads/
+node_modules/
+*.sock
+cache.json
+pdfs/
