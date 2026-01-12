@@ -1,3 +1,7 @@
+/** @typedef {import('./types.mjs').FetchResult} FetchResult */
+/** @typedef {import('./types.mjs').FetchOptions} FetchOptions */
+/** @typedef {import('./types.mjs').PaperMetadata} PaperMetadata */
+
 import fs from 'fs/promises';
 import path from 'path';
 import axios from 'axios';
@@ -9,39 +13,16 @@ import { fetchFromCore } from './fetchers/core.mjs';
 import { fetchFromOpenAlex } from './fetchers/openalex.mjs';
 import { fetchFromPubMed } from './fetchers/pubmed.mjs';
 import { fetchFromWebSearch } from './fetchers/webSearch.mjs';
+import { cacheGet, cacheSet, normalizeTitle } from './cache.mjs';
+import { createFetchLogger } from './logger.mjs';
 
-const CACHE_FILE = process.env.CACHE_FILE || './cache.json';
 const PDF_STORAGE_PATH = process.env.PDF_STORAGE_PATH || './pdfs';
 
 /**
- * Load cache from disk
+ * In-flight request deduplication
+ * Prevents duplicate API calls for the same paper title
  */
-async function loadCache() {
-  try {
-    const data = await fs.readFile(CACHE_FILE, 'utf-8');
-    return JSON.parse(data);
-  } catch (error) {
-    return {};
-  }
-}
-
-/**
- * Save cache to disk
- */
-async function saveCache(cache) {
-  try {
-    await fs.writeFile(CACHE_FILE, JSON.stringify(cache, null, 2));
-  } catch (error) {
-    console.error('Failed to save cache:', error);
-  }
-}
-
-/**
- * Normalize title for cache key
- */
-function normalizeTitle(title) {
-  return title.toLowerCase().trim().replace(/\s+/g, ' ');
-}
+const inflightRequests = new Map();
 
 /**
  * Download PDF and save to local storage
@@ -80,27 +61,71 @@ async function downloadPdf(url, title) {
 }
 
 /**
- * Main paper fetcher with smart fallback strategy
- * Tries multiple sources in order of reliability and legality
+ * Source priority for selecting best result when multiple succeed
+ */
+const SOURCE_PRIORITY = {
+  'arXiv': 1,
+  'Semantic Scholar': 2,
+  'OpenAlex': 3,
+  'PubMed Central': 4,
+  'CORE': 5,
+  'Crossref': 6,
+  'Web Search': 7,
+  'Unpaywall': 8
+};
+
+/**
+ * Main paper fetcher with parallel fetching strategy
+ * Runs all sources in parallel for speed, picks best result
+ * Deduplicates concurrent requests for the same paper
+ * @param {string} title - Paper title to search for
+ * @param {FetchOptions} [options] - Fetch options
+ * @returns {Promise<FetchResult>} - Fetch result with PDF URL or error
  */
 export async function fetchPaper(title, options = {}) {
-  const normalizedTitle = normalizeTitle(title);
+  const normalizedKey = normalizeTitle(title);
+
+  const log = createFetchLogger(title);
 
   // Check cache first
-  const cache = await loadCache();
-  if (cache[normalizedTitle] && !options.skipCache) {
-    console.log('Cache hit for:', title);
-    return {
-      ...cache[normalizedTitle],
-      cached: true
-    };
+  if (!options.skipCache) {
+    const cached = await cacheGet(title);
+    if (cached) {
+      log.info('Cache hit');
+      return {
+        ...cached,
+        cached: true
+      };
+    }
   }
 
-  console.log('Fetching paper:', title);
+  // Check for in-flight request for same paper
+  if (inflightRequests.has(normalizedKey)) {
+    log.info('Deduplicating request');
+    return inflightRequests.get(normalizedKey);
+  }
 
-  // Define fetching strategies in order of preference
-  // 1. Free, legal, reliable sources first
-  // 2. Sources requiring DOI lookup next
+  // Create promise for this request and store it
+  const fetchPromise = fetchPaperInternal(title, options);
+  inflightRequests.set(normalizedKey, fetchPromise);
+
+  try {
+    const result = await fetchPromise;
+    return result;
+  } finally {
+    // Clean up after request completes
+    inflightRequests.delete(normalizedKey);
+  }
+}
+
+/**
+ * Internal fetch implementation (called by deduplicating wrapper)
+ */
+async function fetchPaperInternal(title, options = {}) {
+  const log = createFetchLogger(title);
+  log.info('Fetching paper');
+
+  // Define fetching strategies
   const strategies = [
     { name: 'arXiv', fn: () => fetchFromArxiv(title) },
     { name: 'Semantic Scholar', fn: () => fetchFromSemanticScholar(title) },
@@ -111,76 +136,92 @@ export async function fetchPaper(title, options = {}) {
     { name: 'Web Search', fn: () => fetchFromWebSearch(title) },
   ];
 
-  let lastError = null;
-  let foundDoi = null;
+  log.info({ sourceCount: strategies.length }, 'Trying sources in parallel');
 
-  // Try each strategy
-  for (const strategy of strategies) {
-    try {
-      console.log(`Trying ${strategy.name}...`);
-      const result = await strategy.fn();
+  // Run all strategies in parallel
+  const results = await Promise.allSettled(
+    strategies.map(async (strategy) => {
+      try {
+        const result = await strategy.fn();
+        return { name: strategy.name, result };
+      } catch (error) {
+        return { name: strategy.name, result: { success: false, error: error.message } };
+      }
+    })
+  );
 
+  // Process results: find PDFs, collect DOIs and metadata
+  const successfulResults = [];
+  const collectedDois = [];
+  const collectedMetadata = [];
+  const errors = [];
+
+  for (const settled of results) {
+    if (settled.status === 'fulfilled') {
+      const { name, result } = settled.value;
       if (result.success && result.pdf_url) {
-        console.log(`✓ Found PDF via ${strategy.name}`);
-
-        // Optionally download and store locally
-        let localPath = null;
-        if (options.downloadLocal) {
-          const downloadResult = await downloadPdf(result.pdf_url, title);
-          if (downloadResult.success) {
-            localPath = downloadResult.filepath;
-          }
+        log.info({ source: name }, 'Found PDF');
+        successfulResults.push({ name, result });
+      } else {
+        if (result.doi) {
+          collectedDois.push(result.doi);
         }
-
-        const finalResult = {
-          success: true,
-          pdf_url: result.pdf_url,
-          pdf_path: localPath,
-          source: result.source,
-          metadata: result.metadata,
-          fetchedAt: new Date().toISOString()
-        };
-
-        // Cache the result
-        cache[normalizedTitle] = finalResult;
-        await saveCache(cache);
-
-        return finalResult;
+        // Collect metadata even from unsuccessful results
+        if (result.metadata) {
+          collectedMetadata.push({ source: name, ...result.metadata });
+        }
+        if (result.error) {
+          errors.push(`${name}: ${result.error}`);
+        }
       }
-
-      // Store DOI if found for later use with Unpaywall
-      if (result.doi) {
-        foundDoi = result.doi;
-      }
-
-      lastError = result.error;
-    } catch (error) {
-      console.error(`${strategy.name} failed:`, error.message);
-      lastError = error.message;
+    } else {
+      errors.push(settled.reason?.message || 'Unknown error');
     }
   }
 
-  // If we found a DOI but no PDF, try Crossref + Unpaywall
-  if (!foundDoi) {
-    try {
-      console.log('Trying Crossref for DOI...');
-      const crossrefResult = await fetchFromCrossref(title);
-      if (crossrefResult.doi) {
-        foundDoi = crossrefResult.doi;
+  // If we found PDFs, return the best one (by source priority)
+  if (successfulResults.length > 0) {
+    successfulResults.sort((a, b) =>
+      (SOURCE_PRIORITY[a.name] || 99) - (SOURCE_PRIORITY[b.name] || 99)
+    );
+
+    const best = successfulResults[0];
+    log.info({ source: best.name, totalSources: successfulResults.length }, 'Selected best result');
+
+    // Optionally download and store locally
+    let localPath = null;
+    if (options.downloadLocal) {
+      const downloadResult = await downloadPdf(best.result.pdf_url, title);
+      if (downloadResult.success) {
+        localPath = downloadResult.filepath;
       }
-    } catch (error) {
-      console.error('Crossref failed:', error.message);
     }
+
+    const finalResult = {
+      success: true,
+      pdf_url: best.result.pdf_url,
+      pdf_path: localPath,
+      source: best.result.source || best.name,
+      metadata: best.result.metadata,
+      fetchedAt: new Date().toISOString()
+    };
+
+    // Cache the result
+    await cacheSet(title, finalResult);
+
+    return finalResult;
   }
 
-  // Try Unpaywall with the DOI
-  if (foundDoi) {
+  // No PDF found - try Unpaywall with collected DOIs
+  if (collectedDois.length > 0) {
+    const uniqueDoi = collectedDois[0]; // Use first DOI found
+    log.info({ doi: uniqueDoi }, 'Trying Unpaywall with DOI');
+
     try {
-      console.log('Trying Unpaywall with DOI:', foundDoi);
-      const unpaywallResult = await fetchFromUnpaywall(foundDoi);
+      const unpaywallResult = await fetchFromUnpaywall(uniqueDoi);
 
       if (unpaywallResult.success && unpaywallResult.pdf_url) {
-        console.log('✓ Found PDF via Unpaywall');
+        log.info({ source: 'Unpaywall' }, 'Found PDF');
 
         let localPath = null;
         if (options.downloadLocal) {
@@ -199,21 +240,28 @@ export async function fetchPaper(title, options = {}) {
           fetchedAt: new Date().toISOString()
         };
 
-        cache[normalizedTitle] = finalResult;
-        await saveCache(cache);
+        await cacheSet(title, finalResult);
 
         return finalResult;
       }
     } catch (error) {
-      console.error('Unpaywall failed:', error.message);
-      lastError = error.message;
+      log.warn({ error: error.message }, 'Unpaywall failed');
+      errors.push(`Unpaywall: ${error.message}`);
     }
   }
 
-  // All strategies failed
+  // All strategies failed - return partial results if we have any
+  const hasPartialData = collectedDois.length > 0 || collectedMetadata.length > 0;
+
   return {
     success: false,
-    error: lastError || 'Paper not found in any source',
-    triedSources: strategies.map(s => s.name).concat(['Crossref', 'Unpaywall'])
+    partial: hasPartialData,
+    error: errors[0] || 'No open access PDF found',
+    // Include DOI if found (user can try other methods)
+    doi: collectedDois[0] || null,
+    // Include best metadata from sources
+    metadata: collectedMetadata[0] || null,
+    triedSources: strategies.map(s => s.name).concat(collectedDois.length > 0 ? ['Unpaywall'] : []),
+    fetchedAt: new Date().toISOString()
   };
 }

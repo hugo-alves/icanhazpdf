@@ -151,6 +151,26 @@
           </button>
         </form>
 
+        <!-- Search History -->
+        <div id="searchHistory" class="mt-4 hidden">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-mono text-gray-500 uppercase">Recent Searches</span>
+            <button id="clearHistory" class="text-xs font-mono text-gray-400 hover:text-gray-600">Clear</button>
+          </div>
+          <div id="historyList" class="flex flex-wrap gap-2"></div>
+        </div>
+
+        <!-- Live Progress -->
+        <div id="progress" class="mt-6 hidden">
+          <div class="brutal-border bg-cream p-4">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-lg animate-pulse">🔍</span>
+              <span class="font-mono text-sm font-bold uppercase">Searching Sources</span>
+            </div>
+            <div id="progressList" class="space-y-2 font-mono text-sm"></div>
+          </div>
+        </div>
+
         <!-- Results -->
         <div id="results" class="mt-8 hidden">
           <div class="border-t-4 border-black pt-6">
@@ -201,12 +221,119 @@
 
   <script>
     const form = document.getElementById('searchForm');
+    const progress = document.getElementById('progress');
+    const progressList = document.getElementById('progressList');
     const results = document.getElementById('results');
     const resultContent = document.getElementById('resultContent');
     const error = document.getElementById('error');
     const errorText = document.getElementById('errorText');
     const searchBtn = document.getElementById('searchBtn');
     const btnText = document.getElementById('btnText');
+    const searchHistory = document.getElementById('searchHistory');
+    const historyList = document.getElementById('historyList');
+    const clearHistoryBtn = document.getElementById('clearHistory');
+    const titleInput = document.getElementById('title');
+
+    // Search History Management
+    const MAX_HISTORY = 10;
+    const HISTORY_KEY = 'paper_fetcher_history';
+
+    function getHistory() {
+      try {
+        return JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveToHistory(title) {
+      const history = getHistory().filter(h => h.toLowerCase() !== title.toLowerCase());
+      history.unshift(title);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, MAX_HISTORY)));
+      renderHistory();
+    }
+
+    function clearHistory() {
+      localStorage.removeItem(HISTORY_KEY);
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const history = getHistory();
+      if (history.length === 0) {
+        searchHistory.classList.add('hidden');
+        return;
+      }
+
+      searchHistory.classList.remove('hidden');
+      historyList.innerHTML = history.map(title => `
+        <button
+          type="button"
+          class="history-item brutal-border px-3 py-1 bg-white text-black text-xs font-mono hover-lift shadow-brutal-sm truncate max-w-[200px]"
+          title="${title}"
+        >${title.length > 30 ? title.substring(0, 30) + '...' : title}</button>
+      `).join('');
+    }
+
+    // History click handler
+    historyList.addEventListener('click', (e) => {
+      if (e.target.classList.contains('history-item')) {
+        titleInput.value = e.target.title;
+        form.dispatchEvent(new Event('submit'));
+      }
+    });
+
+    clearHistoryBtn.addEventListener('click', clearHistory);
+
+    // Initial render
+    renderHistory();
+
+    // Source status icons
+    const STATUS_ICONS = {
+      trying: '⏳',
+      found: '✅',
+      no_pdf: '❌',
+      error: '⚠️',
+      selected: '🎯'
+    };
+
+    // Source colors for badges
+    const SOURCE_COLORS = {
+      'arXiv': 'bg-solar-green',
+      'Semantic Scholar': 'bg-solar-sky',
+      'OpenAlex': 'bg-solar-lime',
+      'PubMed Central': 'bg-solar-amber',
+      'CORE': 'bg-solar-coral',
+      'Crossref': 'bg-solar-teal',
+      'Web Search': 'bg-white',
+      'Unpaywall': 'bg-cream'
+    };
+
+    function updateSourceStatus(source, status, extra = '') {
+      const id = `source-${source.replace(/\s+/g, '-')}`;
+      let el = document.getElementById(id);
+
+      if (!el) {
+        el = document.createElement('div');
+        el.id = id;
+        el.className = 'flex items-center gap-2 py-1';
+        progressList.appendChild(el);
+      }
+
+      const color = SOURCE_COLORS[source] || 'bg-gray-100';
+      const icon = STATUS_ICONS[status] || '⏳';
+      const statusText = status === 'found' ? 'PDF found!' :
+                        status === 'no_pdf' ? 'No PDF' :
+                        status === 'error' ? 'Error' :
+                        status === 'trying' ? 'Searching...' : status;
+
+      el.innerHTML = `
+        <span>${icon}</span>
+        <span class="brutal-border px-2 py-0.5 ${color} text-black text-xs font-bold uppercase">${source}</span>
+        <span class="text-gray-600">${statusText}</span>
+        ${extra ? `<span class="text-gray-400 text-xs">${extra}</span>` : ''}
+      `;
+    }
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -214,50 +341,153 @@
       const title = document.getElementById('title').value.trim();
       if (!title) return;
 
+      // Save to history
+      saveToHistory(title);
+
       // Reset UI
+      progress.classList.remove('hidden');
+      progressList.innerHTML = '';
       results.classList.add('hidden');
       error.classList.add('hidden');
       searchBtn.disabled = true;
       btnText.innerHTML = '<span class="loading-dots">Searching</span>';
 
       try {
-        const response = await fetch('/api/fetch', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title })
+        // Use SSE for real-time progress
+        const eventSource = new EventSource(`/api/fetch-stream?title=${encodeURIComponent(title)}`);
+
+        eventSource.addEventListener('start', (e) => {
+          const data = JSON.parse(e.data);
+          progressList.innerHTML = `<div class="text-gray-500">Checking ${data.sources} sources...</div>`;
         });
 
-        const data = await response.json();
+        eventSource.addEventListener('cache_hit', (e) => {
+          progressList.innerHTML = '<div class="flex items-center gap-2">⚡ <span class="text-solar-green font-bold">Cache hit!</span></div>';
+        });
 
-        if (data.success) {
-          results.classList.remove('hidden');
-          resultContent.innerHTML = `
-            <div class="brutal-border bg-solar-green/20 p-4 space-y-4">
-              <div class="flex items-center flex-wrap gap-2">
-                <span class="text-2xl">🌿</span>
-                <span class="font-bold text-black uppercase font-mono">Found!</span>
-                <span class="brutal-border px-2 py-0.5 bg-solar-lime text-black text-xs font-bold uppercase font-mono">${data.source}</span>
+        eventSource.addEventListener('trying', (e) => {
+          const data = JSON.parse(e.data);
+          updateSourceStatus(data.source, 'trying');
+        });
+
+        eventSource.addEventListener('found', (e) => {
+          const data = JSON.parse(e.data);
+          updateSourceStatus(data.source, 'found');
+        });
+
+        eventSource.addEventListener('no_pdf', (e) => {
+          const data = JSON.parse(e.data);
+          updateSourceStatus(data.source, 'no_pdf', data.doi ? `DOI: ${data.doi}` : '');
+        });
+
+        eventSource.addEventListener('error', (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            if (data.source) {
+              updateSourceStatus(data.source, 'error');
+            }
+          } catch {}
+        });
+
+        eventSource.addEventListener('selected', (e) => {
+          const data = JSON.parse(e.data);
+          updateSourceStatus(data.source, 'selected', `(${data.count} sources had PDFs)`);
+        });
+
+        eventSource.addEventListener('complete', (e) => {
+          const data = JSON.parse(e.data);
+          eventSource.close();
+
+          progress.classList.add('hidden');
+          searchBtn.disabled = false;
+          btnText.innerHTML = 'Search Papers';
+
+          if (data.success) {
+            results.classList.remove('hidden');
+            const doi = data.metadata?.doi;
+            resultContent.innerHTML = `
+              <div class="brutal-border bg-solar-green/20 p-4 space-y-4">
+                <div class="flex items-center flex-wrap gap-2">
+                  <span class="text-2xl">🌿</span>
+                  <span class="font-bold text-black uppercase font-mono">Found!</span>
+                  <span class="brutal-border px-2 py-0.5 bg-solar-lime text-black text-xs font-bold uppercase font-mono">${data.source}</span>
+                  ${data.cached ? '<span class="text-xs text-gray-500">(cached)</span>' : ''}
+                </div>
+                ${data.metadata?.title ? `<p class="font-bold text-black text-lg">${data.metadata.title}</p>` : ''}
+                ${data.metadata?.authors ? `<p class="text-gray-700 font-mono text-sm">${data.metadata.authors}</p>` : ''}
+                <div class="flex flex-wrap gap-2">
+                  <a
+                    href="${data.pdf_url}"
+                    target="_blank"
+                    class="inline-flex items-center gap-2 brutal-border bg-solar-green text-black px-4 py-2 font-bold uppercase font-mono text-sm hover-lift shadow-brutal-sm"
+                  >
+                    <span>Download PDF</span>
+                    <span>↓</span>
+                  </a>
+                  ${doi ? `
+                    <button
+                      type="button"
+                      id="copyBibtex"
+                      data-doi="${doi}"
+                      class="inline-flex items-center gap-2 brutal-border bg-solar-sky text-black px-4 py-2 font-bold uppercase font-mono text-sm hover-lift shadow-brutal-sm"
+                    >
+                      <span id="bibtexBtnText">Copy BibTeX</span>
+                      <span>📋</span>
+                    </button>
+                  ` : ''}
+                </div>
               </div>
-              ${data.metadata?.title ? `<p class="font-bold text-black text-lg">${data.metadata.title}</p>` : ''}
-              ${data.metadata?.authors ? `<p class="text-gray-700 font-mono text-sm">${data.metadata.authors}</p>` : ''}
-              <a
-                href="${data.pdf_url}"
-                target="_blank"
-                class="inline-flex items-center gap-2 brutal-border bg-solar-green text-black px-4 py-2 font-bold uppercase font-mono text-sm hover-lift shadow-brutal-sm"
-              >
-                <span>Download PDF</span>
-                <span>↓</span>
-              </a>
-            </div>
-          `;
-        } else {
+            `;
+
+            // BibTeX copy handler
+            const bibtexBtn = document.getElementById('copyBibtex');
+            if (bibtexBtn) {
+              bibtexBtn.addEventListener('click', async () => {
+                const btnTextEl = document.getElementById('bibtexBtnText');
+                const doi = bibtexBtn.dataset.doi;
+                btnTextEl.textContent = 'Loading...';
+
+                try {
+                  const res = await fetch(`/api/bibtex?doi=${encodeURIComponent(doi)}`);
+                  const result = await res.json();
+
+                  if (result.success) {
+                    await navigator.clipboard.writeText(result.bibtex);
+                    btnTextEl.textContent = 'Copied!';
+                    setTimeout(() => { btnTextEl.textContent = 'Copy BibTeX'; }, 2000);
+                  } else {
+                    btnTextEl.textContent = 'Error';
+                    setTimeout(() => { btnTextEl.textContent = 'Copy BibTeX'; }, 2000);
+                  }
+                } catch (err) {
+                  btnTextEl.textContent = 'Error';
+                  setTimeout(() => { btnTextEl.textContent = 'Copy BibTeX'; }, 2000);
+                }
+              });
+            }
+          } else {
+            error.classList.remove('hidden');
+            errorText.textContent = data.error || 'Paper not found in any source. Try a different title!';
+            if (data.doi) {
+              errorText.textContent += ` DOI found: ${data.doi}`;
+            }
+          }
+        });
+
+        // Fallback error handler
+        eventSource.onerror = () => {
+          eventSource.close();
+          progress.classList.add('hidden');
           error.classList.remove('hidden');
-          errorText.textContent = data.error || 'Paper not found in any source. Try a different title!';
-        }
+          errorText.textContent = 'Connection error. Please try again.';
+          searchBtn.disabled = false;
+          btnText.innerHTML = 'Search Papers';
+        };
+
       } catch (err) {
+        progress.classList.add('hidden');
         error.classList.remove('hidden');
         errorText.textContent = 'Connection error: ' + err.message;
-      } finally {
         searchBtn.disabled = false;
         btnText.innerHTML = 'Search Papers';
       }

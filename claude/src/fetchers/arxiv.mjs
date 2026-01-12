@@ -1,9 +1,12 @@
-import axios from 'axios';
 import { parseStringPromise } from 'xml2js';
+import axios from 'axios';
+import { isTitleMatch } from '../utils/titleMatch.mjs';
+import { validatePdfUrl } from '../utils/pdfValidator.mjs';
 
 /**
  * ArXiv fetcher - searches for papers on arXiv and returns PDF URLs
  * ArXiv is a free preprint repository with direct PDF access
+ * Validates title similarity and PDF content-type
  */
 export async function fetchFromArxiv(title) {
   try {
@@ -21,27 +24,37 @@ export async function fetchFromArxiv(title) {
       return { success: false, error: 'No results found on arXiv' };
     }
 
-    // Get the first result
-    const entry = data.feed.entry[0];
-    const arxivId = entry.id[0].split('/abs/')[1];
-    const pdfUrl = `http://arxiv.org/pdf/${arxivId}.pdf`;
+    // Loop through results and validate title match
+    for (const entry of data.feed.entry) {
+      const resultTitle = entry.title[0].replace(/\s+/g, ' ').trim();
 
-    // Verify the PDF exists
-    const headResponse = await axios.head(pdfUrl, { timeout: 5000 });
-    if (headResponse.status === 200) {
-      return {
-        success: true,
-        pdf_url: pdfUrl,
-        source: 'arXiv',
-        metadata: {
-          title: entry.title[0],
-          authors: entry.author?.map(a => a.name[0]).join(', '),
-          published: entry.published[0]
-        }
-      };
+      // Validate title similarity to avoid false positives
+      if (!isTitleMatch(title, resultTitle)) {
+        continue;
+      }
+
+      const arxivId = entry.id[0].split('/abs/')[1];
+      const pdfUrl = `https://arxiv.org/pdf/${arxivId}.pdf`;
+
+      // Verify the PDF exists and is actually a PDF
+      const validation = await validatePdfUrl(pdfUrl);
+      if (validation.valid) {
+        return {
+          success: true,
+          pdf_url: pdfUrl,
+          source: 'arXiv',
+          metadata: {
+            title: resultTitle,
+            authors: entry.author?.map(a => a.name[0]).join(', '),
+            published: entry.published[0],
+            arxivId
+          }
+        };
+      }
+      // PDF validation failed, try next result
     }
 
-    return { success: false, error: 'PDF not accessible on arXiv' };
+    return { success: false, error: 'No matching paper found on arXiv' };
   } catch (error) {
     return { success: false, error: `arXiv error: ${error.message}` };
   }
