@@ -1,11 +1,10 @@
 # CLAUDE.md
 
-API service to fetch academic paper PDFs from multiple sources with smart fallback.
+ICanHazPDF - The legal way to get that PDF. API service to fetch academic paper PDFs from multiple open access sources.
 
 ## Quick Start
 
 ```bash
-cd claude
 npm install
 npm run dev    # Development with auto-reload
 npm start      # Production
@@ -15,27 +14,25 @@ npm test       # Run test suite
 ## Project Structure
 
 ```
-paper-fetcher/
-├── claude/                    # Node.js/Express implementation (active)
-│   ├── server.mjs             # Express server with API endpoints
-│   ├── src/
-│   │   ├── paperFetcher.mjs   # Main orchestrator with fallback logic
-│   │   ├── fetchers/          # Individual source fetchers
-│   │   │   ├── arxiv.mjs
-│   │   │   ├── semanticScholar.mjs
-│   │   │   ├── openalex.mjs
-│   │   │   ├── pubmed.mjs
-│   │   │   ├── core.mjs
-│   │   │   ├── crossref.mjs
-│   │   │   ├── unpaywall.mjs
-│   │   │   └── webSearch.mjs
-│   │   └── utils/
-│   │       └── titleMatch.mjs  # Title validation to prevent false positives
-│   ├── public/
-│   │   └── index.html         # Web UI
-│   ├── test.mjs               # Test suite
-│   └── vercel.json            # Vercel deployment config
-└── codex/                     # Python/FastAPI implementation (deprecated)
+icanhazpdf/
+├── server.mjs             # Express server with API endpoints
+├── src/
+│   ├── paperFetcher.mjs   # Main orchestrator with fallback logic
+│   ├── fetchers/          # Individual source fetchers
+│   │   ├── arxiv.mjs
+│   │   ├── semanticScholar.mjs
+│   │   ├── openalex.mjs
+│   │   ├── pubmed.mjs
+│   │   ├── core.mjs
+│   │   ├── crossref.mjs
+│   │   ├── unpaywall.mjs
+│   │   └── webSearch.mjs
+│   └── utils/
+│       └── titleMatch.mjs  # Title validation to prevent false positives
+├── public/
+│   └── index.html         # Web UI
+├── test.mjs               # Test suite
+└── vercel.json            # Vercel deployment config
 ```
 
 ## API Endpoints
@@ -43,7 +40,9 @@ paper-fetcher/
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/fetch` | POST | Fetch single paper PDF |
+| `/api/fetch-stream` | GET | SSE streaming with progress |
 | `/api/batch-fetch` | POST | Fetch up to 10 papers |
+| `/api/bibtex` | GET | Get BibTeX citation by DOI |
 | `/api/health` | GET | Health check |
 | `/` | GET | Web UI |
 
@@ -137,4 +136,4 @@ Achieves **19/20** on the LLM papers benchmark. The 1 failure is a paywalled pap
 
 ## Issue Tracking
 
-Uses beads (`bd`) for issue tracking. See `AGENTS.md` for workflow.
+Uses beads (`bd`) for issue tracking.

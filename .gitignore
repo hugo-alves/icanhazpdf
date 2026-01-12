@@ -1,10 +1,7 @@
 node_modules/
-.venv/
-__pycache__/
-*.pyc
 .env
-cache.json
-cache.sqlite
 pdfs/
-.vercel/
+cache.json
 *.log
+.DS_Store
+.vercel
