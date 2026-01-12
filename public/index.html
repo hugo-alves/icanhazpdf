@@ -105,11 +105,11 @@
   </style>
 </head>
 <body class="min-h-screen">
-  <!-- Decorative corner plants -->
-  <div class="fixed top-4 left-4 text-4xl opacity-60 pointer-events-none select-none">🌱</div>
-  <div class="fixed top-4 right-4 text-4xl opacity-60 pointer-events-none select-none">🌿</div>
-  <div class="fixed bottom-4 left-4 text-4xl opacity-60 pointer-events-none select-none">🍃</div>
-  <div class="fixed bottom-4 right-4 text-4xl opacity-60 pointer-events-none select-none">🌻</div>
+  <!-- Decorative corner plants - hidden on mobile to avoid overlap -->
+  <div class="hidden md:block fixed top-4 left-4 text-4xl opacity-60 pointer-events-none select-none">🌱</div>
+  <div class="hidden md:block fixed top-4 right-4 text-4xl opacity-60 pointer-events-none select-none">🌿</div>
+  <div class="hidden md:block fixed bottom-4 left-4 text-4xl opacity-60 pointer-events-none select-none">🍃</div>
+  <div class="hidden md:block fixed bottom-4 right-4 text-4xl opacity-60 pointer-events-none select-none">🌻</div>
 
   <div class="container mx-auto px-4 py-8 md:py-12">
     <!-- Header -->
@@ -138,7 +138,7 @@
               id="title"
               name="title"
               placeholder="e.g., Attention Is All You Need"
-              class="w-full px-4 py-3 brutal-border bg-cream font-mono text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-0 focus:bg-amber-50 transition-colors"
+              class="w-full px-4 py-3 brutal-border bg-cream font-mono text-base text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-0 focus:bg-amber-50 transition-colors"
               required
             >
           </div>
@@ -155,7 +155,7 @@
         <div id="searchHistory" class="mt-4 hidden">
           <div class="flex items-center justify-between mb-2">
             <span class="text-xs font-mono text-gray-500 uppercase">Recent Searches</span>
-            <button id="clearHistory" class="text-xs font-mono text-gray-400 hover:text-gray-600">Clear</button>
+            <button id="clearHistory" class="text-sm font-mono text-gray-400 hover:text-gray-600 min-h-[44px] px-2">Clear</button>
           </div>
           <div id="historyList" class="flex flex-wrap gap-2"></div>
         </div>
@@ -165,9 +165,9 @@
           <div class="brutal-border bg-cream p-4">
             <div class="flex items-center gap-2 mb-3">
               <span class="text-lg animate-pulse">🔍</span>
-              <span class="font-mono text-sm font-bold uppercase">Searching Sources</span>
+              <span class="font-mono text-sm md:text-sm font-bold uppercase">Searching Sources</span>
             </div>
-            <div id="progressList" class="space-y-2 font-mono text-sm"></div>
+            <div id="progressList" class="space-y-3 font-mono text-sm md:text-sm"></div>
           </div>
         </div>
 
@@ -199,14 +199,14 @@
           <h3 class="text-sm font-bold text-black uppercase tracking-wider font-mono">Data Sources</h3>
         </div>
         <div class="flex flex-wrap gap-2">
-          <span class="brutal-border px-3 py-1.5 bg-solar-green text-black text-xs font-bold uppercase font-mono hover-lift shadow-brutal-sm cursor-default">arXiv</span>
-          <span class="brutal-border px-3 py-1.5 bg-solar-sky text-black text-xs font-bold uppercase font-mono hover-lift shadow-brutal-sm cursor-default">Semantic Scholar</span>
-          <span class="brutal-border px-3 py-1.5 bg-solar-lime text-black text-xs font-bold uppercase font-mono hover-lift shadow-brutal-sm cursor-default">OpenAlex</span>
-          <span class="brutal-border px-3 py-1.5 bg-solar-amber text-black text-xs font-bold uppercase font-mono hover-lift shadow-brutal-sm cursor-default">PubMed</span>
-          <span class="brutal-border px-3 py-1.5 bg-solar-coral text-black text-xs font-bold uppercase font-mono hover-lift shadow-brutal-sm cursor-default">CORE</span>
-          <span class="brutal-border px-3 py-1.5 bg-solar-teal text-black text-xs font-bold uppercase font-mono hover-lift shadow-brutal-sm cursor-default">Crossref</span>
-          <span class="brutal-border px-3 py-1.5 bg-white text-black text-xs font-bold uppercase font-mono hover-lift shadow-brutal-sm cursor-default">Web Search</span>
-          <span class="brutal-border px-3 py-1.5 bg-cream text-black text-xs font-bold uppercase font-mono hover-lift shadow-brutal-sm cursor-default">Unpaywall</span>
+          <span class="brutal-border px-3 py-2 min-h-[44px] flex items-center bg-solar-green text-black text-xs font-bold uppercase font-mono hover-lift shadow-brutal-sm cursor-default">arXiv</span>
+          <span class="brutal-border px-3 py-2 min-h-[44px] flex items-center bg-solar-sky text-black text-xs font-bold uppercase font-mono hover-lift shadow-brutal-sm cursor-default">Semantic Scholar</span>
+          <span class="brutal-border px-3 py-2 min-h-[44px] flex items-center bg-solar-lime text-black text-xs font-bold uppercase font-mono hover-lift shadow-brutal-sm cursor-default">OpenAlex</span>
+          <span class="brutal-border px-3 py-2 min-h-[44px] flex items-center bg-solar-amber text-black text-xs font-bold uppercase font-mono hover-lift shadow-brutal-sm cursor-default">PubMed</span>
+          <span class="brutal-border px-3 py-2 min-h-[44px] flex items-center bg-solar-coral text-black text-xs font-bold uppercase font-mono hover-lift shadow-brutal-sm cursor-default">CORE</span>
+          <span class="brutal-border px-3 py-2 min-h-[44px] flex items-center bg-solar-teal text-black text-xs font-bold uppercase font-mono hover-lift shadow-brutal-sm cursor-default">Crossref</span>
+          <span class="brutal-border px-3 py-2 min-h-[44px] flex items-center bg-white text-black text-xs font-bold uppercase font-mono hover-lift shadow-brutal-sm cursor-default">Web Search</span>
+          <span class="brutal-border px-3 py-2 min-h-[44px] flex items-center bg-cream text-black text-xs font-bold uppercase font-mono hover-lift shadow-brutal-sm cursor-default">Unpaywall</span>
         </div>
       </div>
 
@@ -272,9 +272,9 @@
       historyList.innerHTML = history.map(title => `
         <button
           type="button"
-          class="history-item brutal-border px-3 py-1 bg-white text-black text-xs font-mono hover-lift shadow-brutal-sm truncate max-w-[200px]"
+          class="history-item brutal-border px-3 py-2 min-h-[44px] bg-white text-black text-sm font-mono hover-lift shadow-brutal-sm truncate max-w-[180px] sm:max-w-[200px]"
           title="${title}"
-        >${title.length > 30 ? title.substring(0, 30) + '...' : title}</button>
+        >${title.length > 25 ? title.substring(0, 25) + '...' : title}</button>
       `).join('');
     }
 
@@ -331,9 +331,9 @@
                         status === 'trying' ? 'Searching...' : status;
 
       el.innerHTML = `
-        <span>${icon}</span>
-        <span class="brutal-border px-2 py-0.5 ${color} text-black text-xs font-bold uppercase">${source}</span>
-        <span class="text-gray-600">${statusText}</span>
+        <span class="text-base">${icon}</span>
+        <span class="brutal-border px-2 py-1 ${color} text-black text-xs font-bold uppercase">${source}</span>
+        <span class="text-gray-600 text-sm">${statusText}</span>
         ${extra ? `<span class="text-gray-400 text-xs">${extra}</span>` : ''}
       `;
     }
@@ -347,15 +347,15 @@
           <div class="flex items-center flex-wrap gap-2">
             <span class="text-2xl">🌿</span>
             <span class="font-bold text-black uppercase font-mono">Found!</span>
-            <span class="brutal-border px-2 py-0.5 ${color} text-black text-xs font-bold uppercase font-mono">${source}</span>
+            <span class="brutal-border px-2 py-1 min-h-[32px] flex items-center ${color} text-black text-xs font-bold uppercase font-mono">${source}</span>
             <span class="text-xs text-gray-500 animate-pulse">(checking other sources...)</span>
           </div>
-          <div class="flex flex-wrap gap-2">
+          <div class="flex flex-wrap gap-3">
             <a
               href="${pdfUrl}"
               target="_blank"
               id="earlyPdfLink"
-              class="inline-flex items-center gap-2 brutal-border bg-solar-green text-black px-4 py-2 font-bold uppercase font-mono text-sm hover-lift shadow-brutal-sm"
+              class="inline-flex items-center justify-center gap-2 brutal-border bg-solar-green text-black px-4 py-3 min-h-[44px] font-bold uppercase font-mono text-sm hover-lift shadow-brutal-sm"
             >
               <span>Download PDF</span>
               <span>↓</span>
@@ -449,15 +449,15 @@
             // Build alternatives HTML if there are any
             const alternativesHtml = alternatives.length > 0 ? `
               <details class="mt-3">
-                <summary class="cursor-pointer text-xs font-mono text-gray-500 hover:text-gray-700">
+                <summary class="cursor-pointer text-sm font-mono text-gray-500 hover:text-gray-700 min-h-[44px] flex items-center">
                   + ${alternatives.length} alternative source${alternatives.length > 1 ? 's' : ''}
                 </summary>
-                <div class="mt-2 flex flex-wrap gap-2">
+                <div class="mt-2 flex flex-wrap gap-3">
                   ${alternatives.map(alt => `
                     <a
                       href="${alt.pdf_url}"
                       target="_blank"
-                      class="inline-flex items-center gap-1 brutal-border bg-white text-black px-3 py-1.5 font-mono text-xs hover-lift shadow-brutal-sm"
+                      class="inline-flex items-center justify-center gap-1 brutal-border bg-white text-black px-3 py-2 min-h-[44px] font-mono text-sm hover-lift shadow-brutal-sm"
                     >
                       <span>${alt.source}</span>
                       <span>↗</span>
@@ -472,16 +472,16 @@
                 <div class="flex items-center flex-wrap gap-2">
                   <span class="text-2xl">🌿</span>
                   <span class="font-bold text-black uppercase font-mono">Found!</span>
-                  <span class="brutal-border px-2 py-0.5 bg-solar-lime text-black text-xs font-bold uppercase font-mono">${data.source}</span>
+                  <span class="brutal-border px-2 py-1 min-h-[32px] flex items-center bg-solar-lime text-black text-xs font-bold uppercase font-mono">${data.source}</span>
                   ${data.cached ? '<span class="text-xs text-gray-500">(cached)</span>' : ''}
                 </div>
                 ${data.metadata?.title ? `<p class="font-bold text-black text-lg">${data.metadata.title}</p>` : ''}
                 ${data.metadata?.authors ? `<p class="text-gray-700 font-mono text-sm">${data.metadata.authors}</p>` : ''}
-                <div class="flex flex-wrap gap-2">
+                <div class="flex flex-wrap gap-3">
                   <a
                     href="${data.pdf_url}"
                     target="_blank"
-                    class="inline-flex items-center gap-2 brutal-border bg-solar-green text-black px-4 py-2 font-bold uppercase font-mono text-sm hover-lift shadow-brutal-sm"
+                    class="inline-flex items-center justify-center gap-2 brutal-border bg-solar-green text-black px-4 py-3 min-h-[44px] font-bold uppercase font-mono text-sm hover-lift shadow-brutal-sm"
                   >
                     <span>Download PDF</span>
                     <span>↓</span>
@@ -491,7 +491,7 @@
                       type="button"
                       id="copyBibtex"
                       data-doi="${doi}"
-                      class="inline-flex items-center gap-2 brutal-border bg-solar-sky text-black px-4 py-2 font-bold uppercase font-mono text-sm hover-lift shadow-brutal-sm"
+                      class="inline-flex items-center justify-center gap-2 brutal-border bg-solar-sky text-black px-4 py-3 min-h-[44px] font-bold uppercase font-mono text-sm hover-lift shadow-brutal-sm"
                     >
                       <span id="bibtexBtnText">Copy BibTeX</span>
                       <span>📋</span>
