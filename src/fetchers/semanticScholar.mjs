@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { isTitleMatch } from '../utils/titleMatch.mjs';
 import { withRetry } from './baseFetcher.mjs';
+import { validatePdfUrl } from '../utils/pdfValidator.mjs';
 
 /**
  * Semantic Scholar fetcher - uses S2 API to find papers and their open access PDFs
@@ -37,18 +38,23 @@ export async function fetchFromSemanticScholar(title) {
       }
 
       if (paper.openAccessPdf?.url) {
-        return {
-          success: true,
-          pdf_url: paper.openAccessPdf.url,
-          source: 'Semantic Scholar',
-          metadata: {
-            title: paper.title,
-            authors: paper.authors?.map(a => a.name).join(', '),
-            year: paper.year,
-            doi: paper.externalIds?.DOI,
-            semanticScholarUrl: paper.url
-          }
-        };
+        // Validate PDF is actually accessible from browser
+        const validation = await validatePdfUrl(paper.openAccessPdf.url);
+        if (validation.valid) {
+          return {
+            success: true,
+            pdf_url: paper.openAccessPdf.url,
+            source: 'Semantic Scholar',
+            metadata: {
+              title: paper.title,
+              authors: paper.authors?.map(a => a.name).join(', '),
+              year: paper.year,
+              doi: paper.externalIds?.DOI,
+              semanticScholarUrl: paper.url
+            }
+          };
+        }
+        // PDF URL not accessible, continue to next paper
       }
     }
 

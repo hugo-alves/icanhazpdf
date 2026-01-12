@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { withRetry } from './baseFetcher.mjs';
+import { validatePdfUrl } from '../utils/pdfValidator.mjs';
 
 /**
  * CORE fetcher - UK-based open access repository aggregator
@@ -25,17 +26,22 @@ export async function fetchFromCore(title) {
     // Try to find a paper with a downloadable PDF
     for (const paper of response.data.results) {
       if (paper.downloadUrl) {
-        return {
-          success: true,
-          pdf_url: paper.downloadUrl,
-          source: 'CORE',
-          metadata: {
-            title: paper.title,
-            authors: paper.authors?.join(', '),
-            year: paper.yearPublished,
-            doi: paper.doi
-          }
-        };
+        // Validate PDF is actually accessible from browser
+        const validation = await validatePdfUrl(paper.downloadUrl);
+        if (validation.valid) {
+          return {
+            success: true,
+            pdf_url: paper.downloadUrl,
+            source: 'CORE',
+            metadata: {
+              title: paper.title,
+              authors: paper.authors?.join(', '),
+              year: paper.yearPublished,
+              doi: paper.doi
+            }
+          };
+        }
+        // PDF URL not accessible, continue to next paper
       }
     }
 

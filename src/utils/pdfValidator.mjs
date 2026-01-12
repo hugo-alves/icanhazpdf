@@ -1,101 +1,105 @@
-import axios from 'axios';
+/**
+ * Validates that a URL actually returns an accessible PDF
+ * Uses browser-like headers to catch 403 blocks
+ */
+
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'application/pdf,*/*',
+  'Accept-Language': 'en-US,en;q=0.9',
+};
 
 /**
- * Validate that a URL points to an actual PDF
- * Checks Content-Type header and optionally PDF magic bytes
+ * Check if a PDF URL is actually accessible
+ * @param {string} url - The PDF URL to validate
+ * @param {number} timeout - Timeout in ms (default 5000)
+ * @returns {Promise<{valid: boolean, error?: string}>}
  */
-export async function validatePdfUrl(url, options = {}) {
-  const { timeout = 5000, checkMagicBytes = false } = options;
-
+export async function validatePdfUrl(url, timeout = 5000) {
   try {
-    if (checkMagicBytes) {
-      // Download first bytes and check PDF magic number
-      const response = await axios.get(url, {
-        timeout,
-        responseType: 'arraybuffer',
-        headers: {
-          'Range': 'bytes=0-4',
-          'User-Agent': 'Mozilla/5.0 (compatible; PaperFetcherBot/1.0)'
-        },
-        maxContentLength: 1024 // Only need first few bytes
-      });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-      const buffer = Buffer.from(response.data);
-      const magic = buffer.toString('utf8', 0, 4);
+    const response = await fetch(url, {
+      method: 'HEAD',
+      headers: BROWSER_HEADERS,
+      signal: controller.signal,
+      redirect: 'follow',
+    });
 
-      if (magic !== '%PDF') {
-        return {
-          valid: false,
-          error: 'Not a PDF file (magic bytes mismatch)'
-        };
-      }
+    clearTimeout(timeoutId);
 
+    if (!response.ok) {
+      return { valid: false, error: `HTTP ${response.status}` };
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+
+    // Accept PDF or octet-stream (some servers use generic binary type)
+    if (contentType.includes('application/pdf') ||
+        contentType.includes('application/octet-stream') ||
+        url.toLowerCase().endsWith('.pdf')) {
       return { valid: true };
     }
 
-    // Just check Content-Type header
-    const response = await axios.head(url, {
-      timeout,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; PaperFetcherBot/1.0)'
-      }
-    });
-
-    const contentType = response.headers['content-type'] || '';
-
-    // Accept application/pdf or octet-stream (some servers misconfigure)
-    if (
-      contentType.includes('application/pdf') ||
-      contentType.includes('application/octet-stream')
-    ) {
-      return { valid: true, contentType };
+    // Some servers don't return content-type on HEAD, try GET with range
+    if (!contentType || contentType.includes('text/html')) {
+      return await validateWithGet(url, timeout);
     }
 
-    // Check if URL ends in .pdf and server returned HTML (common error page)
-    if (contentType.includes('text/html') && url.toLowerCase().includes('.pdf')) {
-      return {
-        valid: false,
-        error: 'URL returns HTML instead of PDF (likely error page)',
-        contentType
-      };
-    }
-
-    // For other content types, be permissive if URL looks like PDF
-    if (url.toLowerCase().includes('.pdf') || url.includes('/pdf/')) {
-      return { valid: true, contentType, warning: 'Non-standard Content-Type' };
-    }
-
-    return {
-      valid: false,
-      error: `Unexpected Content-Type: ${contentType}`,
-      contentType
-    };
+    return { valid: true }; // Assume valid if we got 200
   } catch (error) {
-    // Network errors or timeouts
-    if (error.response?.status === 404) {
-      return { valid: false, error: 'PDF not found (404)' };
+    if (error.name === 'AbortError') {
+      return { valid: false, error: 'timeout' };
     }
-    if (error.response?.status === 403) {
-      return { valid: false, error: 'PDF access forbidden (403)' };
-    }
-    if (error.code === 'ECONNABORTED') {
-      return { valid: false, error: 'Timeout validating PDF' };
-    }
-
-    return { valid: false, error: `Validation error: ${error.message}` };
+    return { valid: false, error: error.message };
   }
 }
 
 /**
- * Quick check if URL is likely a PDF based on URL pattern
- * Use for fast pre-filtering before network validation
+ * Fallback: fetch first bytes and check PDF signature
  */
-export function looksLikePdfUrl(url) {
-  const urlLower = url.toLowerCase();
-  return (
-    urlLower.endsWith('.pdf') ||
-    urlLower.includes('/pdf/') ||
-    urlLower.includes('type=pdf') ||
-    urlLower.includes('format=pdf')
-  );
+async function validateWithGet(url, timeout = 5000) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        ...BROWSER_HEADERS,
+        'Range': 'bytes=0-10', // Just get first few bytes
+      },
+      signal: controller.signal,
+      redirect: 'follow',
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok && response.status !== 206) {
+      return { valid: false, error: `HTTP ${response.status}` };
+    }
+
+    const buffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+
+    // Check for PDF magic bytes: %PDF
+    if (bytes[0] === 0x25 && bytes[1] === 0x50 &&
+        bytes[2] === 0x44 && bytes[3] === 0x46) {
+      return { valid: true };
+    }
+
+    // Check if it's HTML (error page)
+    const text = new TextDecoder().decode(bytes);
+    if (text.toLowerCase().includes('<!doc') || text.toLowerCase().includes('<html')) {
+      return { valid: false, error: 'HTML response (not PDF)' };
+    }
+
+    return { valid: true }; // Assume valid
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      return { valid: false, error: 'timeout' };
+    }
+    return { valid: false, error: error.message };
+  }
 }
