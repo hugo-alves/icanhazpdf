@@ -13,8 +13,9 @@ import { fetchFromCore } from './fetchers/core.mjs';
 import { fetchFromOpenAlex } from './fetchers/openalex.mjs';
 import { fetchFromPubMed } from './fetchers/pubmed.mjs';
 import { fetchFromWebSearch } from './fetchers/webSearch.mjs';
-import { cacheGet, cacheSet, normalizeTitle } from './cache.mjs';
-import { createFetchLogger } from './logger.mjs';
+import { cacheGet, cacheSet, cacheSetNegative, cacheGetNegative, normalizeTitle, markRevalidating, markRevalidationComplete } from './cache.mjs';
+import { createFetchLogger, generateCorrelationId, logSourceTiming } from './logger.mjs';
+import { withCircuitBreaker, isSourceHealthy, getAllCircuitBreakerStatus } from './circuitBreaker.mjs';
 
 const PDF_STORAGE_PATH = process.env.PDF_STORAGE_PATH || './pdfs';
 
@@ -74,6 +75,38 @@ const SOURCE_PRIORITY = {
   'Unpaywall': 8
 };
 
+// Concurrency configuration
+const CONCURRENCY_CONFIG = {
+  maxConcurrent: 4,       // Max sources to query simultaneously
+  sequentialFallback: 2   // Switch to sequential after this many rate limits
+};
+
+/**
+ * Run promises with limited concurrency
+ * @param {Array<function>} tasks - Array of async functions to run
+ * @param {number} limit - Max concurrent tasks
+ * @returns {Promise<Array>}
+ */
+async function runWithConcurrencyLimit(tasks, limit) {
+  const results = [];
+  const executing = new Set();
+
+  for (const task of tasks) {
+    const promise = Promise.resolve().then(() => task());
+    results.push(promise);
+    executing.add(promise);
+
+    const cleanup = () => executing.delete(promise);
+    promise.then(cleanup, cleanup);
+
+    if (executing.size >= limit) {
+      await Promise.race(executing);
+    }
+  }
+
+  return Promise.allSettled(results);
+}
+
 /**
  * Main paper fetcher with parallel fetching strategy
  * Runs all sources in parallel for speed, picks best result
@@ -91,9 +124,35 @@ export async function fetchPaper(title, options = {}) {
   if (!options.skipCache) {
     const cached = await cacheGet(title);
     if (cached) {
-      log.info('Cache hit');
+      log.info({ stale: cached.stale }, 'Cache hit');
+
+      // If stale and needs revalidation, trigger background refresh
+      if (cached.needsRevalidation && !cached.expired) {
+        log.info('Triggering background revalidation');
+        markRevalidating(title);
+        // Fire and forget - don't await
+        fetchPaperInternal(title, { ...options, skipCache: true })
+          .then(result => {
+            if (result.success) {
+              cacheSet(title, result);
+            }
+          })
+          .catch(() => {})
+          .finally(() => markRevalidationComplete(title));
+      }
+
       return {
         ...cached,
+        cached: true
+      };
+    }
+
+    // Check negative cache (failed lookups)
+    const negativeCached = await cacheGetNegative(title);
+    if (negativeCached && !negativeCached.expired) {
+      log.info('Negative cache hit (previously not found)');
+      return {
+        ...negativeCached,
         cached: true
       };
     }
@@ -122,8 +181,9 @@ export async function fetchPaper(title, options = {}) {
  * Internal fetch implementation (called by deduplicating wrapper)
  */
 async function fetchPaperInternal(title, options = {}) {
-  const log = createFetchLogger(title);
-  log.info('Fetching paper');
+  const correlationId = options.correlationId || generateCorrelationId();
+  const log = createFetchLogger(title, correlationId);
+  log.info({ correlationId }, 'Fetching paper');
 
   // Define fetching strategies
   const strategies = [
@@ -136,19 +196,48 @@ async function fetchPaperInternal(title, options = {}) {
     { name: 'Web Search', fn: () => fetchFromWebSearch(title) },
   ];
 
-  log.info({ sourceCount: strategies.length }, 'Trying sources in parallel');
+  // Filter out sources with open circuit breakers
+  const healthyStrategies = strategies.filter(s => {
+    const healthy = isSourceHealthy(s.name);
+    if (!healthy) {
+      log.info({ source: s.name }, 'Skipping source (circuit breaker open)');
+    }
+    return healthy;
+  });
 
-  // Run all strategies in parallel
-  const results = await Promise.allSettled(
-    strategies.map(async (strategy) => {
-      try {
-        const result = await strategy.fn();
-        return { name: strategy.name, result };
-      } catch (error) {
-        return { name: strategy.name, result: { success: false, error: error.message } };
-      }
-    })
+  // Sort strategies by priority (fastest/most reliable first)
+  healthyStrategies.sort((a, b) =>
+    (SOURCE_PRIORITY[a.name] || 99) - (SOURCE_PRIORITY[b.name] || 99)
   );
+
+  log.info({
+    sourceCount: healthyStrategies.length,
+    skipped: strategies.length - healthyStrategies.length,
+    maxConcurrent: CONCURRENCY_CONFIG.maxConcurrent
+  }, 'Trying sources with limited concurrency');
+
+  // Create tasks for each strategy
+  const tasks = healthyStrategies.map((strategy) => async () => {
+    const startTime = Date.now();
+    try {
+      const result = await withCircuitBreaker(strategy.name, () => strategy.fn());
+      const durationMs = Date.now() - startTime;
+      const status = result.success && result.pdf_url ? 'found' : 'not_found';
+      logSourceTiming(log, strategy.name, durationMs, status);
+      return { name: strategy.name, result, durationMs };
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+      logSourceTiming(log, strategy.name, durationMs, 'error', { error: error.message });
+      // Circuit breaker open or source failed
+      if (error.circuitBreakerOpen) {
+        return { name: strategy.name, result: { success: false, error: 'Circuit breaker open' }, durationMs };
+      }
+      return { name: strategy.name, result: { success: false, error: error.message }, durationMs };
+    }
+  });
+
+  // Run with concurrency limit
+  const results = await runWithConcurrencyLimit(tasks, CONCURRENCY_CONFIG.maxConcurrent);
 
   // Process results: find PDFs, collect DOIs and metadata
   const successfulResults = [];
@@ -253,7 +342,7 @@ async function fetchPaperInternal(title, options = {}) {
   // All strategies failed - return partial results if we have any
   const hasPartialData = collectedDois.length > 0 || collectedMetadata.length > 0;
 
-  return {
+  const failedResult = {
     success: false,
     partial: hasPartialData,
     error: errors[0] || 'No open access PDF found',
@@ -264,4 +353,17 @@ async function fetchPaperInternal(title, options = {}) {
     triedSources: strategies.map(s => s.name).concat(collectedDois.length > 0 ? ['Unpaywall'] : []),
     fetchedAt: new Date().toISOString()
   };
+
+  // Cache the failed result (negative caching) to avoid repeated searches
+  await cacheSetNegative(title, failedResult);
+
+  return failedResult;
+}
+
+/**
+ * Get circuit breaker status for all sources
+ * @returns {object} Status of all circuit breakers
+ */
+export function getSourceHealth() {
+  return getAllCircuitBreakerStatus();
 }

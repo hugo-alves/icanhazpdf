@@ -1,10 +1,11 @@
 import 'dotenv/config';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
-import { fetchPaper } from './src/paperFetcher.mjs';
+import { fetchPaper, getSourceHealth } from './src/paperFetcher.mjs';
 import { fetchFromUnpaywall } from './src/fetchers/unpaywall.mjs';
 import { fetchPaperWithProgress } from './src/paperFetcherStream.mjs';
 import logger, { createRequestLogger } from './src/logger.mjs';
+import { getMetrics, getPrometheusMetrics, recordCacheEvent, recordFetchRequest } from './src/metrics.mjs';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -70,6 +71,37 @@ app.get('/api/health', (req, res) => {
 });
 
 /**
+ * Metrics endpoint - JSON format
+ * GET /api/metrics
+ * Returns detailed metrics about sources, cache, and requests
+ */
+app.get('/api/metrics', async (req, res) => {
+  try {
+    const format = req.query.format || 'json';
+
+    if (format === 'prometheus') {
+      const prometheusMetrics = await getPrometheusMetrics();
+      res.set('Content-Type', 'text/plain; charset=utf-8');
+      return res.send(prometheusMetrics);
+    }
+
+    const metrics = await getMetrics();
+    res.json(metrics);
+  } catch (error) {
+    logger.error({ error: error.message }, 'Failed to get metrics');
+    res.status(500).json({ error: 'Failed to get metrics' });
+  }
+});
+
+/**
+ * Source health endpoint - shows circuit breaker status
+ * GET /api/sources/health
+ */
+app.get('/api/sources/health', (req, res) => {
+  res.json(getSourceHealth());
+});
+
+/**
  * Deep health check - verifies each source API is reachable
  * GET /api/health/deep
  * Slower but provides detailed status per source
@@ -129,13 +161,31 @@ app.get('/api/health/deep', async (req, res) => {
   const overallStatus = healthyCount === sources.length ? 'healthy' :
                         healthyCount >= sources.length / 2 ? 'degraded' : 'unhealthy';
 
+  // Get circuit breaker states
+  const circuitBreakerStatus = getSourceHealth();
+
+  // Merge circuit breaker info into source statuses
+  const enrichedStatuses = sourceStatuses.map(source => {
+    const cbStatus = circuitBreakerStatus[source.name];
+    return {
+      ...source,
+      circuitBreaker: cbStatus ? {
+        state: cbStatus.state,
+        failures: cbStatus.failures,
+        successRate: cbStatus.successRate
+      } : null
+    };
+  });
+
   res.json({
     status: overallStatus,
     timestamp: new Date().toISOString(),
-    sources: sourceStatuses,
+    sources: enrichedStatuses,
+    circuitBreakers: circuitBreakerStatus,
     summary: {
       healthy: healthyCount,
-      total: sources.length
+      total: sources.length,
+      circuitBreakersOpen: Object.values(circuitBreakerStatus).filter(cb => cb.state === 'open').length
     }
   });
 });
