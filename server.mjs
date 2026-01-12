@@ -8,7 +8,36 @@ import logger, { createRequestLogger } from './src/logger.mjs';
 import { getMetrics, getPrometheusMetrics, recordCacheEvent, recordFetchRequest } from './src/metrics.mjs';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const DEFAULT_PORT = process.env.PORT || 3000;
+
+/**
+ * Check if a port is available
+ */
+async function isPortAvailable(port) {
+  const net = await import('net');
+  return new Promise((resolve) => {
+    const server = net.default.createServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => {
+      server.close();
+      resolve(true);
+    });
+    server.listen(port);
+  });
+}
+
+/**
+ * Find an available port starting from the default
+ */
+async function findAvailablePort(startPort, maxAttempts = 10) {
+  for (let i = 0; i < maxAttempts; i++) {
+    const port = startPort + i;
+    if (await isPortAvailable(port)) {
+      return port;
+    }
+  }
+  throw new Error(`No available port found in range ${startPort}-${startPort + maxAttempts - 1}`);
+}
 
 // Rate limiter for API endpoints
 const apiLimiter = rateLimit({
@@ -472,18 +501,31 @@ app.use((req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
-  logger.info({
-    port: PORT,
-    url: `http://localhost:${PORT}`,
-    endpoints: [
-      'POST /api/fetch',
-      'POST /api/fetch-by-doi',
-      'GET /api/fetch-stream',
-      'POST /api/batch-fetch',
-      'GET /api/health'
-    ]
-  }, 'Paper PDF Fetcher API started');
-});
+async function startServer() {
+  try {
+    const PORT = await findAvailablePort(DEFAULT_PORT);
+    if (PORT !== DEFAULT_PORT) {
+      logger.warn({ requestedPort: DEFAULT_PORT, actualPort: PORT }, 'Default port in use, using alternate port');
+    }
+    app.listen(PORT, () => {
+      logger.info({
+        port: PORT,
+        url: `http://localhost:${PORT}`,
+        endpoints: [
+          'POST /api/fetch',
+          'POST /api/fetch-by-doi',
+          'GET /api/fetch-stream',
+          'POST /api/batch-fetch',
+          'GET /api/health'
+        ]
+      }, 'Paper PDF Fetcher API started');
+    });
+  } catch (error) {
+    logger.error({ error: error.message }, 'Failed to start server');
+    process.exit(1);
+  }
+}
+
+startServer();
 
 export default app;
